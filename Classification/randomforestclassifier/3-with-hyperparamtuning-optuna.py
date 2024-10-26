@@ -1,232 +1,90 @@
 # Databricks notebook source
-import pyspark.pandas as pd
+# MAGIC %pip install optuna
+# MAGIC %pip install optuna-integration # Integration with MLflow
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 import numpy as np
-
-# COMMAND ----------
-
-files = dbutils.fs.ls("/mnt/expt-sklearn")
-display(files)
-
-# COMMAND ----------
-
-
-pys_Df = spark.read\
-    .option("header",True)\
-    .option("inferenceSchema",True)\
-    .csv("dbfs:/mnt/expt-sklearn/heart-disease.csv") 
-
-display(pys_Df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### to pyspark panda
-
-# COMMAND ----------
-
-pys_Pd_Df = pys_Df.toPandas()
-display(pys_Pd_Df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### get the features and the target variables
-
-# COMMAND ----------
-
-# X = features matrix
-X = pys_Pd_Df.drop('target', axis=1)
-
-# y = labels
-y = pys_Pd_Df['target']
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### select the model
-
-# COMMAND ----------
-
-# using a classification ml model and hyper parameters
-from sklearn.ensemble import RandomForestClassifier
-
-# default hyperparams
-clf = RandomForestClassifier()
-
-# see what the default hyper params are 
-clf.get_params()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### split the data
-
-# COMMAND ----------
-
-# get the  data split up 
+import pandas as pd
+import sklearn
+from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### fit the model to the data 
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import optuna
 
 # COMMAND ----------
 
-clf.fit(X_train, y_train)
+california = fetch_california_housing()
+X = california.data
+y = california.target
+
+# Split data into train and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC #### try making a prediction
+# Define objective function
+def objective(trial):
+    # Suggest values for hyperparameters
+    n_estimators = trial.suggest_int("n_estimators", 10, 200, log=True)
+    max_depth = trial.suggest_int("max_depth", 2, 32)
+    min_samples_split = trial.suggest_int("min_samples_split", 2, 10)
+    min_samples_leaf = trial.suggest_int("min_samples_leaf", 1, 10)
+
+    # Create and fit random forest model
+    model = RandomForestRegressor(
+    n_estimators=n_estimators,
+    max_depth=max_depth,
+    min_samples_split=min_samples_split,
+    min_samples_leaf=min_samples_leaf,
+    random_state=42,
+    )
+    model.fit(X_train, y_train)
+
+    # Make predictions and calculate RMSE
+    y_pred = model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    # Return MAE
+    return mae
 
 # COMMAND ----------
 
-y_preds = clf.predict(X_test)
-y_preds
+# Create study object
+study = optuna.create_study(direction="minimize")
+
+# Run optimization process
+study.optimize(objective, n_trials=20, show_progress_bar=True)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC #### evaluate the model with training data : should be 1 
+# Print best trial and best hyperparameters
+print("Best trial:", study.best_trial)
+print("Best hyperparameters:", study.best_params)
 
 # COMMAND ----------
 
-# score will be perfect because its the training data
-clf.score(X_train,y_train)
+# Import optuna.visualization
+import optuna.visualization as vis
 
-# COMMAND ----------
+# Plot optimization history
+vis.plot_optimization_history(study)
 
-# MAGIC %md
-# MAGIC #### evaluate the model with testing data 
+# Plot parameter importance
+vis.plot_param_importances(study)
 
-# COMMAND ----------
+# Plot slice plot
+vis.plot_slice(study, params=["n_estimators", "max_depth"])
 
-clf.score(X_test,y_test)
+# Plot contour plot
+vis.plot_contour(study, params=["min_samples_split", "min_samples_leaf"])
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### print the performance report
-
-# COMMAND ----------
-
-from sklearn.metrics import classification_report,confusion_matrix  ,accuracy_score
-
-print(classification_report(y_test,y_preds))
-
-# COMMAND ----------
-
-import matplotlib.pyplot as plt
-import numpy
-from sklearn import metrics
-
-confusion_matrix = confusion_matrix(y_test,y_preds)
-cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix = confusion_matrix, display_labels = [0, 1])
-
-cm_display.plot()
-plt.show()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC - True Negative (Top-Left Quadrant)
-# MAGIC - False Positive (Top-Right Quadrant)
-# MAGIC - False Negative (Bottom-Left Quadrant)
-# MAGIC - True Positive (Bottom-Right Quadrant)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### accuracy score
-
-# COMMAND ----------
-
-accuracy_score(y_test,y_preds)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ####  hyper parameter tuning for better accuracy with hyperopt
-
-# COMMAND ----------
-
-from hyperopt import hp,fmin,tpe,STATUS_OK,Trials
-from sklearn.model_selection import cross_val_score
-
-space = {'criterion': hp.choice('criterion', ['entropy', 'gini']),
-        'max_depth': hp.quniform('max_depth', 10, 1200, 10),
-        'max_features': hp.choice('max_features', ['auto', 'sqrt','log2', None]),
-        'min_samples_leaf': hp.uniform('min_samples_leaf', 0, 0.5),
-        'min_samples_split' : hp.uniform ('min_samples_split', 0, 1),
-        'n_estimators' : hp.choice('n_estimators', [10, 50, 300, 750, 1200,1300,1500])
-    }
-
-def objective(space):
-    model = RandomForestClassifier(criterion = space['criterion'], max_depth = space['max_depth'],
-                                 max_features = space['max_features'],
-                                 min_samples_leaf = space['min_samples_leaf'],
-                                 min_samples_split = space['min_samples_split'],
-                                 n_estimators = space['n_estimators'], 
-                                 )
-
-    accuracy = cross_val_score(model, X_train, y_train, cv = 5).mean()
-    # We aim to maximize accuracy, therefore we return it as a negative value
-    return {'loss': -accuracy, 'status': STATUS_OK }
-
-
-
-trials = Trials()
-best = fmin(fn= objective,
-            space= space,
-            algo= tpe.suggest,
-            max_evals = 80,
-            trials= trials)
-best  
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### look at the results and choose the best value of the hyperparameter which gave the best accuracy 
-# MAGIC ##### retrain the model with the specific hyper parameter
-
-# COMMAND ----------
-
-clf = RandomForestClassifier(n_estimators=30).fit(X_train,y_train)
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC #### check if the accuracy of new model is as expected using the test data
-
-# COMMAND ----------
-
-print(f"Model accuracy on test set : {clf.score(X_test,y_test)*100:2f}%")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### save the model
-
-# COMMAND ----------
-
-import pickle
-
-pickle.dump(clf,open("random_forest_model_1.pkl","wb"))
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### load the model & see how it performs
-
-# COMMAND ----------
-
-loaded_model= pickle.load(open("random_forest_model_1.pkl","rb"))
-loaded_model.score(X_test,y_test)
-
-# COMMAND ----------
-
-
+# Plot parallel_coordinate
+vis.plot_parallel_coordinate(study)
