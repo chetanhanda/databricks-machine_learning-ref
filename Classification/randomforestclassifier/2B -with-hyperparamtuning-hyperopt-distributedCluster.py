@@ -153,23 +153,27 @@ accuracy_score(y_test,y_preds)
 
 # COMMAND ----------
 
-from hyperopt import hp,fmin,tpe,STATUS_OK,Trials
+from hyperopt import hp,fmin,tpe,STATUS_OK,SparkTrials
 from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
 
-space = {'criterion': hp.choice('criterion', ['entropy', 'gini']),
-        'max_depth': hp.quniform('max_depth', 10, 1200, 10),
-        'max_features': hp.choice('max_features', ['auto', 'sqrt','log2', None]),
+space = {
+        'criterion': hp.choice('criterion', ['entropy', 'gini']),
+        # 'max_depth': hp.quniform('max_depth', 10, 1200, 10),
+        'max_features': hp.choice('max_features', ['sqrt','log2', None]),
         'min_samples_leaf': hp.uniform('min_samples_leaf', 0, 0.5),
         'min_samples_split' : hp.uniform ('min_samples_split', 0, 1),
-        'n_estimators' : hp.choice('n_estimators', [10, 50, 300, 750, 1200,1300,1500])
+        'n_estimators' : hp.choice('n_estimators', [10, 20,30,40,50,60,70,80,90,100])
     }
 
 def objective(space):
-    model = RandomForestClassifier(criterion = space['criterion'], max_depth = space['max_depth'],
+    model = RandomForestClassifier(
+                                 criterion = space['criterion'],
+                                #  max_depth = space['max_depth'],
                                  max_features = space['max_features'],
                                  min_samples_leaf = space['min_samples_leaf'],
                                  min_samples_split = space['min_samples_split'],
-                                 n_estimators = space['n_estimators'], 
+                                 n_estimators = space['n_estimators'] 
                                  )
 
     accuracy = cross_val_score(model, X_train, y_train, cv = 5).mean()
@@ -178,11 +182,12 @@ def objective(space):
 
 
 
-trials = Trials()
+trials = SparkTrials()
+
 best = fmin(fn= objective,
             space= space,
             algo= tpe.suggest,
-            max_evals = 80,
+            max_evals = 100,
             trials= trials)
 best  
 
@@ -194,7 +199,7 @@ best
 
 # COMMAND ----------
 
-clf = RandomForestClassifier(n_estimators=30).fit(X_train,y_train)
+clf = RandomForestClassifier(n_estimators=3,max_features=1,min_samples_leaf=0.2429998889267651,min_samples_split=0.025696850647164204).fit(X_train,y_train)
 
 
 # COMMAND ----------
