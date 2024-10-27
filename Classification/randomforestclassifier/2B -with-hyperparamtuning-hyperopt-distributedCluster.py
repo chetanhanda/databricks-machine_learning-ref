@@ -199,7 +199,7 @@ best
 
 # COMMAND ----------
 
-clf = RandomForestClassifier(n_estimators=3,max_features=1,min_samples_leaf=0.2429998889267651,min_samples_split=0.025696850647164204).fit(X_train,y_train)
+clf = RandomForestClassifier(n_estimators=8,max_features=1,min_samples_leaf=0.0710655476988157,min_samples_split= 0.14267900269416406).fit(X_train,y_train)
 
 
 # COMMAND ----------
